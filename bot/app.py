@@ -33,6 +33,7 @@ class App:
     engine: chess.engine.SimpleEngine
     log: Logger
     call: AppMainFunction
+    games: 'list[str]'
 
     async def setup(self):
         self.session = aiohttp.ClientSession("https://lichess.org", headers=HEADERS)
@@ -120,7 +121,7 @@ class APIStreamHandler(StreamHandler):
                     else:
                         await self.decline_challenge(event.challenge.id)
 
-                elif event.type == EventType.GAME_START:
+                elif event.type == EventType.GAME_START and not event.game.id in self.app.games:
                     self.app.log.info("Starting a game, ID: %s", event.game.id)
                     game_handler = GameStreamHandler(self.app, event.game)
                     asyncio.create_task(game_handler.play())
@@ -140,6 +141,7 @@ class GameStreamHandler(StreamHandler):
         self.moves = ""
 
     async def play(self):
+        self.app.games.append(self.game.id)
         await self.connect()
         while True:
             try:
@@ -171,6 +173,10 @@ class GameStreamHandler(StreamHandler):
                                     self.game.id,
                                     str(event.status),
                                 )
+                                try:
+                                    self.app.games.remove(self.game.id)
+                                except:
+                                    pass
                                 return
                             await self.on_game_state(event)
 
