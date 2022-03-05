@@ -77,6 +77,7 @@ class StreamHandler:
 class APIStreamHandler(StreamHandler):
     def __init__(self, app: App):
         super().__init__(app, "/api/stream/event")
+        self.tasks: 'set[asyncio.Task]' = set()
 
     async def begin_listening(self):
         await self.connect()
@@ -94,37 +95,45 @@ class APIStreamHandler(StreamHandler):
                 break
 
     async def _handle_events(self):
-        async for raw_data in self.stream.iter_any():
-            decoded = raw_data.decode()
-            if decoded == "\n" or decoded == "\n\n":
-                continue
-
-            try:
-                data_ls = decode_json(raw_data)
-            except JSONDecodeFailure:
-                self.app.log.warning("Failed to decode JSON: %s", raw_data)
-                continue
-
-            for data in data_ls:
-                event = APIEvent.from_json(data)
-                if event is None:
-                    self.app.log.warning("Received unhandled event: %s", data["type"])
+        try:
+            async for raw_data in self.stream.iter_any():
+                decoded = raw_data.decode()
+                if decoded == "\n" or decoded == "\n\n":
                     continue
 
-                if event.type == EventType.CHALLENGE:
-                    self.app.log.info(
-                        "Received a challenge, ID: %s", event.challenge.id
-                    )
-                    # Currently only accepting standart
-                    if event.challenge.variant == Variant.STANDARD:
-                        await self.accept_challenge(event.challenge.id)
-                    else:
-                        await self.decline_challenge(event.challenge.id)
+                try:
+                    data_ls = decode_json(raw_data)
+                except JSONDecodeFailure:
+                    self.app.log.warning("Failed to decode JSON: %s", raw_data)
+                    continue
 
-                elif event.type == EventType.GAME_START and not event.game.id in self.app.games:
-                    self.app.log.info("Starting a game, ID: %s", event.game.id)
-                    game_handler = GameStreamHandler(self.app, event.game)
-                    asyncio.create_task(game_handler.play())
+                for data in data_ls:
+                    event = APIEvent.from_json(data)
+                    if event is None:
+                        self.app.log.warning("Received unhandled event: %s", data["type"])
+                        continue
+
+                    if event.type == EventType.CHALLENGE:
+                        self.app.log.info(
+                            "Received a challenge, ID: %s", event.challenge.id
+                        )
+                        # Currently only accepting standart
+                        if event.challenge.variant == Variant.STANDARD:
+                            await self.accept_challenge(event.challenge.id)
+                        else:
+                            await self.decline_challenge(event.challenge.id)
+
+                    elif event.type == EventType.GAME_START and not event.game.id in self.app.games:
+                        self.app.log.info("Starting a game, ID: %s", event.game.id)
+                        game_handler = GameStreamHandler(self.app, event.game)
+                        task = asyncio.create_task(game_handler.play())
+                        task.add_done_callback(self.tasks.discard)
+                        self.tasks.add(task)
+        except asyncio.CancelledError:
+            for task in self.tasks:
+                task.cancel()
+        finally:
+            await asyncio.gather(self.tasks)
 
     async def accept_challenge(self, challenge_id: str):
         await self.app.session.post(f"/api/challenge/{challenge_id}/accept")
@@ -194,13 +203,15 @@ class GameStreamHandler(StreamHandler):
                 break
 
     async def take_turn(self, wtime: int, btime: int, winc: int, binc: int):
-        clock, inc = (
-            (wtime, winc) if self.game.color == GameColor.WHITE else (btime, binc)
-        )
         move: chess.Move = (
             await self.app.engine.play(
                 self.board,
-                chess.engine.Limit(time=get_time(clock, inc)),
+                chess.engine.Limit(
+                    white_clock=wtime / 1000,
+                    black_clock=btime / 1000,
+                    white_inc=winc / 1000,
+                    black_inc=binc / 1000
+                ),
             )
         ).move
         self.push(move)
