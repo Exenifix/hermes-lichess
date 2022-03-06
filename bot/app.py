@@ -132,8 +132,6 @@ class APIStreamHandler(StreamHandler):
         except asyncio.CancelledError:
             for task in self.tasks:
                 task.cancel()
-        finally:
-            await asyncio.gather(self.tasks)
 
     async def accept_challenge(self, challenge_id: str):
         await self.app.session.post(f"/api/challenge/{challenge_id}/accept")
