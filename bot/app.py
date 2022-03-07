@@ -2,6 +2,7 @@ import asyncio
 import os
 import traceback
 from io import StringIO
+from random import choice
 from typing import Coroutine
 
 import aiohttp
@@ -10,14 +11,15 @@ import chess.engine
 from dotenv import load_dotenv
 
 from colorlogs import Color, Logger
-from datamodels import APIEvent, Game, GameStateEvent
+from datamodels import APIEvent, BotUser, Game, GameStateEvent
 from enums import Color as GameColor
 from enums import EventType, GameStatus, Variant
 from errors import ConnectionFailure, JSONDecodeFailure
+from looping import Loop
 from utils import decode_json
 
 load_dotenv()
-TOKEN = os.getenv('TOKEN')
+TOKEN = os.getenv("TOKEN")
 if TOKEN is None:
     print("Token was not specified. Please complete setup as said in README.md")
 HEADERS = {"Authorization": "Bearer " + TOKEN}
@@ -36,13 +38,22 @@ class App:
     engine: chess.engine.SimpleEngine
     log: Logger
     call: AppMainFunction
-    games: 'list[str]'
+    games: "list[str]"
+    challenges: "ChallengesHandler"
+    _loops: "list[Loop]"
+
+    def __init__(self):
+        self.log = Logger()
+        self.games = []
+        self.challenges = ChallengesHandler(self)
+        self._loops: "list[Loop]" = []
 
     async def setup(self):
         self.session = aiohttp.ClientSession("https://lichess.org", headers=HEADERS)
         _, self.engine = await chess.engine.popen_uci(os.getenv("ENGINE_PATH"))
-        self.log = Logger()
-        self.games = []
+
+    def add_loop(self, loop: Loop):
+        self._loops.append(loop)
 
     def main(self, coro: Coroutine):
         self.call = AppMainFunction(coro)
@@ -50,11 +61,72 @@ class App:
 
     def run(self):
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(self._run())
+        try:
+            loop.run_until_complete(self._run())
+        except (KeyboardInterrupt, SystemExit):
+            self.log.info("App shutting down")
+        finally:
+            loop.close()
 
     async def _run(self):
         await self.setup()
-        await self.call()
+        await asyncio.gather(self.call(), *[l.start() for l in self._loops])  # TODO
+
+    def loop(
+        self,
+        *,
+        seconds: int = 0,
+        minutes: int = 0,
+        hours: int = 0,
+        sleep_interval: int = 3,
+    ):
+        def decorator(func: Coroutine):
+            loop = Loop(
+                func,
+                seconds=seconds,
+                minutes=minutes,
+                hours=hours,
+                sleep_interval=sleep_interval,
+            )
+            self.add_loop(loop)
+            return loop
+
+        return decorator
+
+
+class ChallengesHandler:
+    def __init__(self, app: App):
+        self.app = app
+
+    async def send_challenge(self, user: BotUser):
+        self.app.log.info("Sending challenge to %s", user.username)
+        clock = choice(
+            [
+                (2, 0),
+                (5, 0),
+                (5, 3),
+                (10, 0),
+                (10, 5),
+                (15, 0),
+                (15, 5),
+                (30, 0),
+                (30, 10),
+            ]
+        )
+        r = await self.app.session.post(
+            f"/api/challenge/{user.username}",
+            json={
+                "rated": True,
+                "clock.limit": clock[0] * 60,
+                "clock.increment": clock[1],
+            },
+        )
+        if r.status != 200:
+            self.app.log.warning(
+                "Failed to send challenge to %s. Error code: %s",
+                user.username,
+                r.status,
+            )
 
 
 class StreamHandler:
@@ -80,7 +152,7 @@ class StreamHandler:
 class APIStreamHandler(StreamHandler):
     def __init__(self, app: App):
         super().__init__(app, "/api/stream/event")
-        self.tasks: 'set[asyncio.Task]' = set()
+        self.tasks: "set[asyncio.Task]" = set()
 
     async def begin_listening(self):
         await self.connect()
@@ -113,7 +185,9 @@ class APIStreamHandler(StreamHandler):
                 for data in data_ls:
                     event = APIEvent.from_json(data)
                     if event is None:
-                        self.app.log.warning("Received unhandled event: %s", data["type"])
+                        self.app.log.warning(
+                            "Received unhandled event: %s", data["type"]
+                        )
                         continue
 
                     if event.type == EventType.CHALLENGE:
@@ -126,7 +200,10 @@ class APIStreamHandler(StreamHandler):
                         else:
                             await self.decline_challenge(event.challenge.id)
 
-                    elif event.type == EventType.GAME_START and not event.game.id in self.app.games:
+                    elif (
+                        event.type == EventType.GAME_START
+                        and not event.game.id in self.app.games
+                    ):
                         self.app.log.info("Starting a game, ID: %s", event.game.id)
                         game_handler = GameStreamHandler(self.app, event.game)
                         task = asyncio.create_task(game_handler.play())
@@ -208,10 +285,11 @@ class GameStreamHandler(StreamHandler):
             await self.app.engine.play(
                 self.board,
                 chess.engine.Limit(
+                    time=10,
                     white_clock=wtime / 1000,
                     black_clock=btime / 1000,
                     white_inc=winc / 1000,
-                    black_inc=binc / 1000
+                    black_inc=binc / 1000,
                 ),
             )
         ).move

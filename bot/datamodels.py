@@ -7,7 +7,10 @@ class APIEvent:
 
     @classmethod
     def from_json(cls, data: dict):
-        event_type = EventType(data["type"])
+        try:
+            event_type = EventType(data["type"])
+        except ValueError:
+            return None
 
         if event_type == EventType.GAME_START:
             return GameStartEvent(data)
@@ -137,3 +140,16 @@ class TimeControl:
     def __init__(self, limit, increment):
         self.limit = limit
         self.increment = increment
+
+
+class BotUser(DataModel):
+    id: str
+    username: str
+
+    @classmethod
+    def from_json(cls, json: dict):
+        obj = cls.__new__(cls)
+        obj.id = json["id"]
+        obj.username = json["username"]
+
+        return obj
