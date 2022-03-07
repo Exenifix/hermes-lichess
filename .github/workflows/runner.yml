@@ -20,7 +20,7 @@ jobs:
         run: docker rm -f chess
 
       - name: Run Container
-        run: docker run --name chess chess:latest
+        run: docker run --name chess -e TOKEN=$TOKEN -e ENGINE_PATH=$ENGINE_PATH chess:latest
         env:
           TOKEN: ${{ secrets.TOKEN }}
           ENGINE_PATH: ./engine
