@@ -1,6 +1,9 @@
 # hermes-lichess
 Just an https://lichess.org bot API client for playing games. **This is not a chess engine**
 
+## Engine
+`engine` is Stockfish 14.1 and is not originally created by authors of this repo. Ownership of the file fully belongs to Stockfish creators and is licensed under GPL license. You can download it here: https://stockfishchess.org/download/
+
 # Setup
 
 1. Install requirements

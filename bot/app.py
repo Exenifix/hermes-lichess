@@ -14,10 +14,13 @@ from datamodels import APIEvent, Game, GameStateEvent
 from enums import Color as GameColor
 from enums import EventType, GameStatus, Variant
 from errors import ConnectionFailure, JSONDecodeFailure
-from utils import decode_json, get_time
+from utils import decode_json
 
 load_dotenv()
-HEADERS = {"Authorization": "Bearer " + os.getenv("TOKEN")}
+TOKEN = os.getenv('TOKEN')
+if TOKEN is None:
+    print("Token was not specified. Please complete setup as said in README.md")
+HEADERS = {"Authorization": "Bearer " + TOKEN}
 
 
 class AppMainFunction:
