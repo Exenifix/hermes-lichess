@@ -22,5 +22,5 @@ jobs:
       - name: Run Container
         run: docker run --name chess chess:latest
         env:
-          TOKEN: ${{ secrets.TOKEN}}
+          TOKEN: ${{ secrets.TOKEN }}
           ENGINE_PATH: ./engine
