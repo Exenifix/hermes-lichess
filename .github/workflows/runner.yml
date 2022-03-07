@@ -14,8 +14,8 @@ jobs:
 
       - name: Download Engine
         run: |
-          wget https://stockfishchess.org/files/stockfish_14.1_linux_x64_bmi2.zip
-          unzip stockfish_14.1_linux_x64_bmi2.zip
+          curl https://stockfishchess.org/files/stockfish_14.1_linux_x64_bmi2.zip -o engine.zip
+          unzip engine.zip
           cp stockfish_14.1_linux_x64_bmi2/stockfish_14.1_linux_x64_bmi2 engine
 
       - name: Build Docker Image
