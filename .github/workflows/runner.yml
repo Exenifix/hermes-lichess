@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: self-hosted
     environment: production
-    
+
     steps:
       - uses: actions/checkout@v2
 
@@ -20,4 +20,4 @@ jobs:
         run: docker rm -f chess
 
       - name: Run Container
-        run: docker run -d --name chess chess:latest
+        run: docker run --name chess chess:latest
