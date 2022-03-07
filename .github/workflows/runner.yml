@@ -1,0 +1,23 @@
+name: Docker Runner
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build Docker Image
+        run: docker build -t chess .
+
+      - name: Kill Previous Container
+        continue-on-error: true
+        run: docker rm -f chess
+
+      - name: Run Container
+        run: docker run -d --name chess chess:latest
