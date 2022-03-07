@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Download Engine
+        run: |
+          wget https://stockfishchess.org/files/stockfish_14.1_linux_x64_bmi2.zip
+          unzip stockfish_14.1_linux_x64_bmi2.zip
+          cp stockfish_14.1_linux_x64_bmi2/stockfish_14.1_linux_x64_bmi2 engine
+
       - name: Build Docker Image
         run: docker build -t chess .
 
