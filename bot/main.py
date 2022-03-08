@@ -13,8 +13,13 @@ async def main():
     await stream_handler.begin_listening()
 
 
-@app.loop(minutes=5)
+@app.loop(minutes=10)
 async def challenge_sender():
+    r = await app.session.get('/api/account/playing')
+    now_playing = await r.json()
+    if len(now_playing["nowPlaying"]) > 0:
+        return
+
     r = await app.session.get("/api/bot/online")
     users = [BotUser.from_json(d) for d in decode_json(await r.content.read())]
     user = choice(users)

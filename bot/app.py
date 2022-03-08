@@ -212,6 +212,8 @@ class APIStreamHandler(StreamHandler):
         except asyncio.CancelledError:
             for task in self.tasks:
                 task.cancel()
+        finally:
+            await asyncio.gather(*self.tasks)
 
     async def accept_challenge(self, challenge_id: str):
         await self.app.session.post(f"/api/challenge/{challenge_id}/accept")
@@ -280,12 +282,12 @@ class GameStreamHandler(StreamHandler):
                 print(s.getvalue())
                 break
 
-    async def take_turn(self, wtime: int, btime: int, winc: int, binc: int):
+    async def take_turn(self, wtime: int, btime: int, winc: int, binc: int, first_turn: bool = False):
         move: chess.Move = (
             await self.app.engine.play(
                 self.board,
                 chess.engine.Limit(
-                    time=10,
+                    time=10 if first_turn else None,
                     white_clock=wtime / 1000,
                     black_clock=btime / 1000,
                     white_inc=winc / 1000,
@@ -310,7 +312,7 @@ class GameStreamHandler(StreamHandler):
         if self.game.color == GameColor.WHITE and not self.game.has_moved:
             self.app.log.debug("Playing as white so doing a turn")
             self.game.has_moved = True
-            await self.take_turn(event.wtime, event.btime, event.winc, event.binc)
+            await self.take_turn(event.wtime, event.btime, event.winc, event.binc, first_turn=True)
         if len(self.board.move_stack) == 0 and len(self.moves.split()) != 0:
             self.app.log.warning(
                 "Received a GAME_STATE event but there were \
